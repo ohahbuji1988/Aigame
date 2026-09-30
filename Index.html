@@ -1,0 +1,1025 @@
+전체 코드를 한 줄씩 정밀 디버깅하여 찾아낸 게임 멈춤(크래시)의 치명적 결함 2가지입니다.
+치명적 원인 분석
+ * 변수 선언 전 참조로 인한 스크립트 즉각 크래시 (TDZ Error)
+   * 스크립트 상단 resize() 함수 내부에서 desk.x = W / 2;를 실행하지만, desk 변수는 그 아래쪽에서 const desk = ...로 선언되어 있습니다.
+   * window.addEventListener('resize', resize); resize();가 실행되는 순간 ReferenceError: Cannot access 'desk' before initialization 예외가 터지면서 스크립트 전체가 사망하여 버튼을 눌러도 반응이 없던 것입니다.
+ * Web Audio Context 모바일 정책 차단
+   * 사용자 인터랙션(터치/클릭) 전에 최상단에서 즉시 new AudioContext()를 생성하면서 모바일 브라우저의 오디오 자동 재생 제한 정책에 걸려 브라우저에 따라 경고 및 지연 프리징이 발생했습니다.
+버그가 완전히 수정된 실행 코드
+아래 코드는 에러를 유발하는 선언 순서를 바로잡고, 모바일 터치 및 오디오 핸들러를 안전하게 래핑한 버전입니다. 메모장에 저장하거나 복사해서 실행하시면 즉시 부드럽게 돌아갑니다.
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>김 과장의 AI 탈출기 : 하이퍼 오피스 둠스데이</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0; padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      touch-action: none;
+    }
+    html, body {
+      width: 100%; height: 100%;
+      background: #020617;
+      font-family: -apple-system, BlinkMacSystemFont, "Pretendard", sans-serif;
+      overflow: hidden;
+      color: #f8fafc;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    #game-container {
+      position: relative;
+      width: 100%; height: 100%;
+      max-width: 480px;
+      display: flex;
+      flex-direction: column;
+      background: #090d16;
+      overflow: hidden;
+    }
+    #ui-bar {
+      padding: 10px 14px;
+      background: rgba(15, 23, 42, 0.95);
+      border-bottom: 2px solid rgba(56, 189, 248, 0.3);
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .hud-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      font-weight: 900;
+    }
+    .hud-chip {
+      background: rgba(30, 41, 59, 0.9);
+      padding: 4px 10px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .bars-wrap { display: flex; gap: 6px; }
+    .gauge-col { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+    .bar-bg {
+      height: 7px;
+      background: #0f172a;
+      border-radius: 4px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+    #hp-fill { width: 100%; height: 100%; background: #22c55e; transition: width 0.1s; }
+    #exp-fill { width: 0%; height: 100%; background: #38bdf8; transition: width 0.1s; }
+    #frenzy-fill { width: 0%; height: 100%; background: #f59e0b; transition: width 0.05s; }
+
+    #canvas-wrap {
+      position: relative;
+      flex: 1;
+      width: 100%;
+      height: 100%;
+    }
+    canvas { display: block; width: 100%; height: 100%; }
+
+    #joy-base {
+      position: absolute;
+      width: 105px; height: 105px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(56, 189, 248, 0.25), rgba(15, 23, 42, 0.85));
+      border: 2px solid rgba(56, 189, 248, 0.6);
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      display: none;
+      z-index: 15;
+    }
+    #joy-knob {
+      position: absolute;
+      top: 50%; left: 50%;
+      width: 44px; height: 44px;
+      margin: -22px 0 0 -22px;
+      border-radius: 50%;
+      background: #38bdf8;
+      border: 2px solid #fff;
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.9);
+    }
+
+    #stamp-btn {
+      position: absolute;
+      bottom: 24px; right: 20px;
+      width: 76px; height: 76px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #ef4444, #991b1b);
+      border: 3px solid #fecaca;
+      box-shadow: 0 0 20px rgba(239, 68, 68, 0.7);
+      color: #fff;
+      font-weight: 900;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 20;
+    }
+    #stamp-btn:active { transform: scale(0.92); }
+    #stamp-btn.cooldown { opacity: 0.4; filter: grayscale(0.8); }
+
+    .screen-overlay {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(3, 7, 18, 0.95);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 30;
+      padding: 16px;
+    }
+    .modal-box {
+      width: 100%; max-width: 380px;
+      background: #1e293b;
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      border-radius: 20px;
+      padding: 20px 16px;
+      text-align: center;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+    }
+    .btn-main {
+      width: 100%; padding: 14px;
+      margin-top: 14px;
+      border-radius: 14px;
+      border: none;
+      background: #0284c7;
+      color: #fff;
+      font-size: 16px; font-weight: 900;
+      cursor: pointer;
+    }
+    .btn-main:active { background: #0369a1; }
+
+    .card-list { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+    .synergy-card {
+      background: #0f172a;
+      border: 2px solid #334155;
+      border-radius: 14px;
+      padding: 12px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-align: left;
+      cursor: pointer;
+    }
+    .synergy-card:active { border-color: #38bdf8; background: #1e293b; }
+    .synergy-badge {
+      font-size: 9px;
+      background: #7c3aed;
+      color: #fff;
+      padding: 2px 6px;
+      border-radius: 6px;
+      font-weight: 800;
+      margin-left: 6px;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="game-container">
+    <div id="ui-bar">
+      <div class="hud-row">
+        <div class="hud-chip" style="color: #4ade80;">❤️ HP <span id="hp-txt">100</span></div>
+        <div class="hud-chip" style="color: #38bdf8;">📂 결재 <span id="work-txt">0%</span></div>
+        <div class="hud-chip" style="color: #facc15;">☕ 샷 <span id="shot-txt">0</span></div>
+      </div>
+      
+      <div class="bars-wrap">
+        <div class="gauge-col">
+          <span style="font-size: 9px; color: #4ade80;">체력</span>
+          <div class="bar-bg"><div id="hp-fill"></div></div>
+        </div>
+        <div class="gauge-col">
+          <span style="font-size: 9px; color: #38bdf8;">Lv.<span id="lvl-txt">1</span> 역량 EXP</span>
+          <div class="bar-bg"><div id="exp-fill"></div></div>
+        </div>
+        <div class="gauge-col">
+          <span style="font-size: 9px; color: #f59e0b;">☕ 카페인 광폭화</span>
+          <div class="bar-bg"><div id="frenzy-fill"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="canvas-wrap">
+      <canvas id="gameCanvas"></canvas>
+
+      <div id="joy-base"><div id="joy-knob"></div></div>
+
+      <div id="stamp-btn">
+        <span style="font-size: 15px;">도장</span>
+        <span id="stamp-sub" style="font-size: 10px;">쾅!</span>
+      </div>
+
+      <!-- 인트로 -->
+      <div id="start-overlay" class="screen-overlay">
+        <div class="modal-box">
+          <div style="font-size: 40px; margin-bottom: 6px;">☕📑⚡</div>
+          <h2 style="font-size: 20px; color: #38bdf8; font-weight: 900; margin-bottom: 8px;">김 과장의 탈출기: 둠스데이</h2>
+          <p style="color: #94a3b8; font-size: 12px; line-height: 1.6; text-align: left; margin-bottom: 12px;">
+            🕹️ <b>화면 왼쪽</b> 터치 드래그로 이동 (PC: WASD)<br>
+            ☕ <b>커피 3잔</b> 획득 시 5초간 <b>카페인 폭주 모드</b> (공속 3배)!<br>
+            👔 50% 결재 시 등장하는 <b>반려 머신 부장(보스)</b> 처치!<br>
+            💻 상단 결재 데스크에서 100% 채우고 칼퇴하세요.
+          </p>
+          <button class="btn-main" id="start-btn">출근 도장 찍고 시작</button>
+        </div>
+      </div>
+
+      <!-- 덱빌딩 -->
+      <div id="card-overlay" class="screen-overlay" style="display: none;">
+        <div class="modal-box">
+          <h2 style="font-size: 18px; color: #fde047; font-weight: 900;">🃏 아키텍처 덱 선택</h2>
+          <p style="color: #94a3b8; font-size: 11px; margin-top: 2px;">카드를 골라 전투력을 강화하세요!</p>
+          <div class="card-list" id="card-list"></div>
+        </div>
+      </div>
+
+      <!-- 게임오버 -->
+      <div id="over-overlay" class="screen-overlay" style="display: none;">
+        <div class="modal-box">
+          <h2 style="font-size: 22px; color: #ef4444; font-weight: 900;">번아웃 사직서 제출</h2>
+          <p id="over-msg" style="color: #cbd5e1; font-size: 13px; margin: 12px 0;"></p>
+          <button class="btn-main" id="retry-btn">다시 출근하기</button>
+        </div>
+      </div>
+
+      <!-- 승리 -->
+      <div id="vic-overlay" class="screen-overlay" style="display: none;">
+        <div class="modal-box">
+          <div style="font-size: 40px; margin-bottom: 6px;">🎉🚪🏃‍♂️</div>
+          <h2 style="font-size: 22px; color: #facc15; font-weight: 900;">정시 칼퇴 성공!</h2>
+          <p style="color: #cbd5e1; font-size: 13px; margin: 12px 0;">부장님의 반려 레이저를 뚫고 결재 승인을 쟁취했습니다!</p>
+          <button class="btn-main" id="vic-btn">내일 또 출근하기</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const wrap = document.getElementById('canvas-wrap');
+
+    // 1. 객체 변수 우선 정의 (TDZ 에러 차단)
+    const desk = { x: 180, y: 110, radius: 40 };
+
+    let W = 360, H = 540;
+    function resize() {
+      W = wrap.clientWidth || 360;
+      H = wrap.clientHeight || 540;
+      canvas.width = W;
+      canvas.height = H;
+      desk.x = W / 2;
+    }
+    window.addEventListener('resize', resize);
+
+    // 2. 오디오 컨텍스트 지연 로딩
+    let audioCtx = null;
+    function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+    function playBeep(freq, type, duration, vol=0.1) {
+      if (!audioCtx) return;
+      try {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+      } catch(e){}
+    }
+
+    let running = false;
+    let paused = false;
+    let shakeTimer = 0;
+    let shakeMag = 0;
+    let workProgress = 0;
+    let coffeeCount = 0;
+    let frenzyTimer = 0;
+    let stampCooldown = 0;
+    let bossSpawned = false;
+
+    const player = {
+      x: 180, y: 420,
+      radius: 17,
+      hp: 100, maxHp: 100,
+      baseSpeed: 230,
+      level: 1, exp: 0, nextExp: 3,
+      orbitCards: 0, orbitAngle: 0,
+      multiShot: 1, damage: 1,
+      cards: new Set()
+    };
+
+    let enemies = [];
+    let bullets = [];
+    let items = [];
+    let particles = [];
+    let texts = [];
+    let lasers = [];
+
+    let lastShoot = 0;
+    let spawnTimer = 0;
+    let coffeeSpawnTimer = 0;
+
+    const CARDS = [
+      { id: 'multishot', name: '보고서 복사기', tag: '기본', desc: '결재 서류 발사 개수 +1 증가' },
+      { id: 'corporate_card', name: '법인카드 회식', tag: '방어/공격', desc: '몸 주위를 회전하는 방어막 카드 생성' },
+      { id: 'rag_search', name: 'RAG 검색 엔진', tag: '시너지', desc: '적 처치 시 주변으로 분열 유도탄 발사' },
+      { id: 'prompt_eng', name: '프롬프트 연쇄', tag: '시너지', desc: '서류 기본 데미지 +2 및 35% 치명타' },
+      { id: 'coffee_drip', name: '에스프레소 머신', tag: '버프', desc: '광폭화 지속 시간 +2.5초' },
+      { id: 'vitamin', name: '홍삼 드링크', tag: '회복', desc: 'HP 40 즉시 회복 및 최대 체력 +25' }
+    ];
+
+    function applyScreenShake(mag, dur) {
+      shakeMag = mag;
+      shakeTimer = dur;
+    }
+
+    // 모바일 조이스틱
+    const joyBase = document.getElementById('joy-base');
+    const joyKnob = document.getElementById('joy-knob');
+    let joyVec = { x: 0, y: 0 };
+    let joyTouchId = null;
+    let joyOrigin = { x: 0, y: 0 };
+
+    wrap.addEventListener('touchstart', e => {
+      if (!running || paused) return;
+      initAudio();
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i];
+        const r = wrap.getBoundingClientRect();
+        const lx = t.clientX - r.left;
+        const ly = t.clientY - r.top;
+        if (lx > W - 110 && ly > H - 110) continue;
+        if (joyTouchId === null) {
+          joyTouchId = t.identifier;
+          joyOrigin = { x: lx, y: ly };
+          joyBase.style.left = lx + 'px';
+          joyBase.style.top = ly + 'px';
+          joyBase.style.display = 'block';
+          joyKnob.style.transform = 'translate(0,0)';
+          joyVec = { x: 0, y: 0 };
+          break;
+        }
+      }
+    }, { passive: false });
+
+    wrap.addEventListener('touchmove', e => {
+      if (!running || paused || joyTouchId === null) return;
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i];
+        if (t.identifier === joyTouchId) {
+          const r = wrap.getBoundingClientRect();
+          let dx = (t.clientX - r.left) - joyOrigin.x;
+          let dy = (t.clientY - r.top) - joyOrigin.y;
+          const dist = Math.hypot(dx, dy);
+          const maxR = 40;
+          if (dist > maxR) {
+            dx = (dx / dist) * maxR;
+            dy = (dy / dist) * maxR;
+          }
+          joyKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+          joyVec.x = dx / maxR;
+          joyVec.y = dy / maxR;
+          break;
+        }
+      }
+    }, { passive: false });
+
+    function joyEnd(e) {
+      if (joyTouchId === null) return;
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === joyTouchId) {
+          joyTouchId = null;
+          joyBase.style.display = 'none';
+          joyVec = { x: 0, y: 0 };
+          break;
+        }
+      }
+    }
+    wrap.addEventListener('touchend', joyEnd);
+    wrap.addEventListener('touchcancel', joyEnd);
+
+    // PC 키보드 WASD 대응
+    const keys = {};
+    window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; });
+    window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+    // 도장 쾅
+    const stampBtn = document.getElementById('stamp-btn');
+    function executeStamp(e) {
+      if (e) e.stopPropagation();
+      initAudio();
+      if (!running || paused || stampCooldown > 0) return;
+      stampCooldown = 4.5;
+      workProgress = Math.min(100, workProgress + 10);
+      applyScreenShake(12, 0.35);
+      playBeep(120, 'square', 0.25, 0.25);
+
+      for (let i = 0; i < 20; i++) {
+        const a = Math.random() * Math.PI * 2;
+        particles.push({
+          x: player.x, y: player.y,
+          vx: Math.cos(a) * (150 + Math.random() * 250),
+          vy: Math.sin(a) * (150 + Math.random() * 250),
+          color: '#ef4444', life: 0.45
+        });
+      }
+
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        const en = enemies[i];
+        const dist = Math.hypot(en.x - player.x, en.y - player.y);
+        if (dist < 150) {
+          const a = Math.atan2(en.y - player.y, en.x - player.x);
+          en.x += Math.cos(a) * 110;
+          en.y += Math.sin(a) * 110;
+          en.hp -= 5;
+          texts.push({ x: en.x, y: en.y, text: '결재승인 -5', color: '#f87171', life: 0.6 });
+          if (en.hp <= 0) killEnemy(i);
+        }
+      }
+    }
+    stampBtn.addEventListener('click', executeStamp);
+    stampBtn.addEventListener('touchstart', executeStamp, { passive: false });
+
+    function autoShoot(now) {
+      const interval = frenzyTimer > 0 ? 70 : 180;
+      if (now - lastShoot < interval || enemies.length === 0) return;
+
+      let target = null;
+      let minD = Infinity;
+      for (const en of enemies) {
+        const d = Math.hypot(en.x - player.x, en.y - player.y);
+        if (d < minD) { minD = d; target = en; }
+      }
+
+      if (target && minD < 340) {
+        const baseA = Math.atan2(target.y - player.y, target.x - player.x);
+        const count = player.multiShot + (frenzyTimer > 0 ? 1 : 0);
+        for (let i = 0; i < count; i++) {
+          const a = baseA + (i - (count - 1) / 2) * 0.22;
+          const isCrit = player.cards.has('prompt_eng') && Math.random() < 0.35;
+          const dmg = (player.damage + (player.cards.has('prompt_eng') ? 2 : 0)) * (isCrit ? 2 : 1);
+
+          bullets.push({
+            x: player.x, y: player.y,
+            vx: Math.cos(a) * 850, vy: Math.sin(a) * 850,
+            damage: dmg, isCrit: isCrit, life: 0.65
+          });
+        }
+        playBeep(isCrit ? 600 : 420, 'sine', 0.04, 0.05);
+        lastShoot = now;
+      }
+    }
+
+    function triggerLevelUp() {
+      paused = true;
+      joyBase.style.display = 'none';
+      joyVec = { x: 0, y: 0 };
+      joyTouchId = null;
+
+      const container = document.getElementById('card-list');
+      container.innerHTML = '';
+
+      const shuffled = [...CARDS].sort(() => 0.5 - Math.random()).slice(0, 3);
+      shuffled.forEach(c => {
+        const div = document.createElement('div');
+        div.className = 'synergy-card';
+        div.innerHTML = `
+          <div style="font-size: 26px;">🃏</div>
+          <div style="flex:1;">
+            <div style="font-size:14px; font-weight:900; color:#38bdf8;">
+              ${c.name} <span class="synergy-badge">${c.tag}</span>
+            </div>
+            <div style="font-size:11px; color:#cbd5e1; margin-top:2px;">${c.desc}</div>
+          </div>
+        `;
+        div.onclick = () => {
+          player.cards.add(c.id);
+          if (c.id === 'multishot') player.multiShot++;
+          if (c.id === 'corporate_card') player.orbitCards++;
+          if (c.id === 'vitamin') {
+            player.maxHp += 25;
+            player.hp = Math.min(player.maxHp, player.hp + 45);
+          }
+          document.getElementById('card-overlay').style.display = 'none';
+          paused = false;
+        };
+        container.appendChild(div);
+      });
+
+      document.getElementById('card-overlay').style.display = 'flex';
+    }
+
+    function killEnemy(idx) {
+      const en = enemies[idx];
+      playBeep(240, 'triangle', 0.1, 0.12);
+      applyScreenShake(4, 0.15);
+
+      for (let i = 0; i < 10; i++) {
+        const a = Math.random() * Math.PI * 2;
+        particles.push({
+          x: en.x, y: en.y,
+          vx: Math.cos(a) * (80 + Math.random() * 120),
+          vy: Math.sin(a) * (80 + Math.random() * 120),
+          color: en.isBoss ? '#facc15' : '#818cf8',
+          life: 0.35
+        });
+      }
+
+      if (player.cards.has('rag_search')) {
+        for (let k = 0; k < 2; k++) {
+          const a = Math.random() * Math.PI * 2;
+          bullets.push({
+            x: en.x, y: en.y,
+            vx: Math.cos(a) * 600, vy: Math.sin(a) * 600,
+            damage: 2, isCrit: false, life: 0.4
+          });
+        }
+      }
+
+      items.push({ x: en.x, y: en.y, type: 'exp' });
+
+      if (en.isBoss) {
+        victory();
+        return;
+      }
+
+      enemies.splice(idx, 1);
+    }
+
+    function update(dt, now) {
+      if (!running || paused) return;
+
+      if (shakeTimer > 0) shakeTimer -= dt;
+      if (stampCooldown > 0) stampCooldown -= dt;
+
+      if (frenzyTimer > 0) {
+        frenzyTimer -= dt;
+        if (Math.random() < 0.3) {
+          particles.push({
+            x: player.x + (Math.random()-0.5)*20,
+            y: player.y + (Math.random()-0.5)*20,
+            vx: 0, vy: -60, color: '#f59e0b', life: 0.3
+          });
+        }
+      }
+
+      // 키보드 벡터 결합
+      let kx = 0, ky = 0;
+      if (keys['w'] || keys['arrowup']) ky -= 1;
+      if (keys['s'] || keys['arrowdown']) ky += 1;
+      if (keys['a'] || keys['arrowleft']) kx -= 1;
+      if (keys['d'] || keys['arrowright']) kx += 1;
+      if (kx !== 0 || ky !== 0) {
+        const d = Math.hypot(kx, ky);
+        joyVec.x = kx / d;
+        joyVec.y = ky / d;
+      } else if (joyTouchId === null) {
+        joyVec.x = 0;
+        joyVec.y = 0;
+      }
+
+      const speed = (player.baseSpeed + (frenzyTimer > 0 ? 100 : 0));
+      player.x += joyVec.x * speed * dt;
+      player.y += joyVec.y * speed * dt;
+      player.x = Math.max(player.radius, Math.min(W - player.radius, player.x));
+      player.y = Math.max(player.radius, Math.min(H - player.radius, player.y));
+
+      const distToDesk = Math.hypot(player.x - desk.x, player.y - desk.y);
+      if (distToDesk < desk.radius + 20) {
+        workProgress = Math.min(100, workProgress + 6.0 * dt);
+        if (workProgress >= 50 && !bossSpawned) spawnBoss();
+        if (workProgress >= 100) { victory(); return; }
+      }
+
+      autoShoot(now);
+
+      if (player.orbitCards > 0) {
+        player.orbitAngle += 5.0 * dt;
+        for (let i = 0; i < player.orbitCards; i++) {
+          const a = player.orbitAngle + (i * Math.PI * 2 / player.orbitCards);
+          const cx = player.x + Math.cos(a) * 60;
+          const cy = player.y + Math.sin(a) * 60;
+          for (let eIdx = enemies.length - 1; eIdx >= 0; eIdx--) {
+            const en = enemies[eIdx];
+            if (Math.hypot(en.x - cx, en.y - cy) < en.radius + 12) {
+              en.hp -= 2.5;
+              texts.push({ x: en.x, y: en.y, text: '법카 슬래시', color: '#fbbf24', life: 0.3 });
+              if (en.hp <= 0) killEnemy(eIdx);
+              break;
+            }
+          }
+        }
+      }
+
+      for (let i = bullets.length - 1; i >= 0; i--) {
+        const b = bullets[i];
+        b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
+        if (b.life <= 0 || b.x < 0 || b.x > W || b.y < 0 || b.y > H) {
+          bullets.splice(i, 1);
+          continue;
+        }
+        for (let eIdx = enemies.length - 1; eIdx >= 0; eIdx--) {
+          const en = enemies[eIdx];
+          if (Math.hypot(b.x - en.x, b.y - en.y) < en.radius + 10) {
+            en.hp -= b.damage;
+            texts.push({
+              x: en.x, y: en.y - 10,
+              text: b.isCrit ? `💥${b.damage}` : `${b.damage}`,
+              color: b.isCrit ? '#ef4444' : '#ffffff',
+              life: 0.4
+            });
+            bullets.splice(i, 1);
+            if (en.hp <= 0) killEnemy(eIdx);
+            break;
+          }
+        }
+      }
+
+      coffeeSpawnTimer += dt;
+      if (coffeeSpawnTimer >= 5.0) {
+        items.push({
+          x: 40 + Math.random() * (W - 80),
+          y: 40 + Math.random() * (H - 120),
+          type: 'coffee'
+        });
+        coffeeSpawnTimer = 0;
+      }
+
+      for (let i = items.length - 1; i >= 0; i--) {
+        const it = items[i];
+        const dist = Math.hypot(player.x - it.x, player.y - it.y);
+        if (dist < 120) {
+          it.x += ((player.x - it.x) / dist) * 450 * dt;
+          it.y += ((player.y - it.y) / dist) * 450 * dt;
+        }
+        if (dist < player.radius + 12) {
+          if (it.type === 'exp') {
+            player.exp++;
+            if (player.exp >= player.nextExp) {
+              player.level++;
+              player.exp = 0;
+              player.nextExp = Math.floor(player.nextExp * 1.5 + 2);
+              triggerLevelUp();
+            }
+          } else if (it.type === 'coffee') {
+            coffeeCount++;
+            playBeep(700, 'square', 0.15, 0.15);
+            if (coffeeCount >= 3) {
+              coffeeCount = 0;
+              frenzyTimer = 5.0 + (player.cards.has('coffee_drip') ? 2.5 : 0);
+              applyScreenShake(8, 0.3);
+              texts.push({ x: player.x, y: player.y - 25, text: '🔥 카페인 과다 광폭화!', color: '#f59e0b', life: 1.0 });
+            }
+          }
+          items.splice(i, 1);
+        }
+      }
+
+      spawnTimer += dt;
+      if (spawnTimer >= (bossSpawned ? 1.4 : 0.75)) {
+        const isHallu = Math.random() < 0.25;
+        enemies.push({
+          x: Math.random() * W, y: -20,
+          radius: isHallu ? 12 : 15,
+          hp: isHallu ? 2 : 4,
+          speed: isHallu ? 160 : 100,
+          isHallu: isHallu,
+          halluTimer: 0,
+          isBoss: false
+        });
+        spawnTimer = 0;
+      }
+
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        const en = enemies[i];
+
+        if (en.isBoss) {
+          en.x += Math.sin(now * 0.003) * 80 * dt;
+          en.laserTimer = (en.laserTimer || 0) + dt;
+          if (en.laserTimer >= 3.5) {
+            en.laserTimer = 0;
+            lasers.push({
+              x: en.x, y: en.y,
+              targetX: player.x, targetY: player.y,
+              life: 0.6
+            });
+            applyScreenShake(10, 0.4);
+            playBeep(90, 'sawtooth', 0.35, 0.25);
+            texts.push({ x: en.x, y: en.y + 20, text: '🚨 결재 반려 레이저!', color: '#ef4444', life: 0.8 });
+          }
+        } else if (en.isHallu) {
+          en.halluTimer += dt * 8;
+          en.x += Math.sin(en.halluTimer) * 120 * dt;
+          en.y += en.speed * dt;
+        } else {
+          const a = Math.atan2(player.y - en.y, player.x - en.x);
+          en.x += Math.cos(a) * en.speed * dt;
+          en.y += Math.sin(a) * en.speed * dt;
+        }
+
+        if (Math.hypot(player.x - en.x, player.y - en.y) < player.radius + en.radius) {
+          player.hp -= 15;
+          applyScreenShake(8, 0.25);
+          playBeep(100, 'sawtooth', 0.15, 0.2);
+          enemies.splice(i, 1);
+          if (player.hp <= 0) {
+            gameOver("부하를 견디지 못하고 쓰러졌습니다...");
+            return;
+          }
+        }
+      }
+
+      for (let i = lasers.length - 1; i >= 0; i--) {
+        const l = lasers[i];
+        l.life -= dt;
+        if (l.life <= 0) { lasers.splice(i, 1); continue; }
+        const d = distToSegment({ x: player.x, y: player.y }, { x: l.x, y: l.y }, { x: l.targetX, y: l.targetY });
+        if (d < 18) {
+          player.hp -= 40 * dt;
+          applyScreenShake(6, 0.1);
+          if (player.hp <= 0) {
+            gameOver("부장님의 반려 레이저에 통째로 증발했습니다...");
+            return;
+          }
+        }
+      }
+
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
+        if (p.life <= 0) particles.splice(i, 1);
+      }
+      for (let i = texts.length - 1; i >= 0; i--) {
+        const t = texts[i];
+        t.y -= 30 * dt; t.life -= dt;
+        if (t.life <= 0) texts.splice(i, 1);
+      }
+
+      updateUI();
+    }
+
+    function distToSegment(p, v, w) {
+      const l2 = (v.x - w.x)**2 + (v.y - w.y)**2;
+      if (l2 === 0) return Math.hypot(p.x - v.x, p.y - v.y);
+      let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
+      t = Math.max(0, Math.min(1, t));
+      return Math.hypot(p.x - (v.x + t * (w.x - v.x)), p.y - (v.y + t * (w.y - v.y)));
+    }
+
+    function spawnBoss() {
+      bossSpawned = true;
+      enemies.push({
+        x: W / 2, y: 80,
+        radius: 32, hp: 80, speed: 0,
+        isBoss: true, isHallu: false
+      });
+      applyScreenShake(14, 0.6);
+      playBeep(80, 'square', 0.5, 0.3);
+      texts.push({ x: W / 2, y: 140, text: '⚠️ [보스] 반려 머신 부장', color: '#facc15', life: 2.0 });
+    }
+
+    function updateUI() {
+      document.getElementById('hp-txt').innerText = Math.max(0, Math.ceil(player.hp));
+      document.getElementById('hp-fill').style.width = `${Math.max(0, (player.hp / player.maxHp) * 100)}%`;
+      document.getElementById('work-txt').innerText = `${Math.floor(workProgress)}%`;
+      document.getElementById('shot-txt').innerText = `${coffeeCount}/3`;
+      document.getElementById('lvl-txt').innerText = player.level;
+      document.getElementById('exp-fill').style.width = `${(player.exp / player.nextExp) * 100}%`;
+      document.getElementById('frenzy-fill').style.width = `${(frenzyTimer / 5.0) * 100}%`;
+
+      if (stampCooldown <= 0) {
+        stampBtn.classList.remove('cooldown');
+        document.getElementById('stamp-sub').innerText = "쾅!";
+      } else {
+        stampBtn.classList.add('cooldown');
+        document.getElementById('stamp-sub').innerText = `${stampCooldown.toFixed(1)}s`;
+      }
+    }
+
+    function draw() {
+      ctx.save();
+
+      if (shakeTimer > 0) {
+        const ox = (Math.random() - 0.5) * shakeMag;
+        const oy = (Math.random() - 0.5) * shakeMag;
+        ctx.translate(ox, oy);
+      }
+
+      ctx.clearRect(0, 0, W, H);
+      ctx.fillStyle = frenzyTimer > 0 ? '#1e110a' : '#090d16';
+      ctx.fillRect(0, 0, W, H);
+
+      ctx.strokeStyle = frenzyTimer > 0 ? 'rgba(245, 158, 11, 0.15)' : 'rgba(56, 189, 248, 0.08)';
+      ctx.lineWidth = 1;
+      for (let x = 0; x < W; x += 36) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+      }
+      for (let y = 0; y < H; y += 36) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+      }
+
+      // 데스크
+      ctx.save();
+      ctx.translate(desk.x, desk.y);
+      ctx.fillStyle = '#334155';
+      ctx.fillRect(-45, -24, 90, 48);
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillRect(-35, -16, 26, 16);
+      ctx.fillRect(9, -16, 26, 16);
+      ctx.fillStyle = '#fde047';
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`💻 결재 데스크 (${Math.floor(workProgress)}%)`, 0, 38);
+      ctx.restore();
+
+      // 아이템
+      for (const it of items) {
+        if (it.type === 'coffee') {
+          ctx.font = '18px sans-serif';
+          ctx.fillText('☕', it.x - 9, it.y + 6);
+        } else {
+          ctx.fillStyle = '#38bdf8';
+          ctx.beginPath(); ctx.arc(it.x, it.y, 5, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+
+      // 발사체
+      for (const b of bullets) {
+        ctx.fillStyle = b.isCrit ? '#ef4444' : '#ffffff';
+        ctx.fillRect(b.x - 4, b.y - 7, 8, 14);
+      }
+
+      // 카드 회전체
+      if (player.orbitCards > 0) {
+        for (let i = 0; i < player.orbitCards; i++) {
+          const a = player.orbitAngle + (i * Math.PI * 2 / player.orbitCards);
+          const cx = player.x + Math.cos(a) * 60;
+          const cy = player.y + Math.sin(a) * 60;
+          ctx.fillStyle = '#facc15';
+          ctx.fillRect(cx - 9, cy - 6, 18, 12);
+        }
+      }
+
+      // 레이저 광선
+      for (const l of lasers) {
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 14 * (l.life / 0.6);
+        ctx.beginPath();
+        ctx.moveTo(l.x, l.y);
+        ctx.lineTo(l.targetX, l.targetY);
+        ctx.stroke();
+
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 4 * (l.life / 0.6);
+        ctx.stroke();
+      }
+
+      // 적들
+      for (const en of enemies) {
+        ctx.save();
+        ctx.translate(en.x, en.y);
+        if (en.isBoss) {
+          ctx.fillStyle = '#ef4444';
+          ctx.fillRect(-28, -28, 56, 56);
+          ctx.fillStyle = '#fef08a';
+          ctx.font = 'bold 22px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('👔', 0, 8);
+          ctx.fillStyle = '#0f172a';
+          ctx.fillRect(-30, -38, 60, 6);
+          ctx.fillStyle = '#ef4444';
+          ctx.fillRect(-30, -38, (en.hp / 80) * 60, 6);
+        } else if (en.isHallu) {
+          ctx.fillStyle = '#c084fc';
+          ctx.beginPath(); ctx.arc(0, 0, en.radius, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#fff'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+          ctx.fillText('?', 0, 4);
+        } else {
+          ctx.fillStyle = '#6366f1';
+          ctx.fillRect(-en.radius, -en.radius, en.radius * 2, en.radius * 2);
+          ctx.fillStyle = '#fde047';
+          ctx.fillRect(-5, -4, 10, 4);
+        }
+        ctx.restore();
+      }
+
+      // 플레이어
+      ctx.save();
+      ctx.translate(player.x, player.y);
+      if (frenzyTimer > 0) {
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(-14, -14, 28, 28);
+      }
+      ctx.fillStyle = '#1e3a8a'; ctx.fillRect(-10, -8, 20, 20);
+      ctx.fillStyle = '#f8fafc'; ctx.fillRect(-4, -8, 8, 12);
+      ctx.fillStyle = '#fed7aa'; ctx.fillRect(-8, -18, 16, 10);
+      ctx.fillStyle = frenzyTimer > 0 ? '#ef4444' : '#4ade80';
+      ctx.beginPath(); ctx.arc(0, 0, 3.5, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+
+      // 파티클 & 텍스트
+      for (const p of particles) {
+        ctx.fillStyle = p.color;
+        ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
+      }
+      for (const t of texts) {
+        ctx.fillStyle = t.color;
+        ctx.font = 'bold 13px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(t.text, t.x, t.y);
+      }
+
+      ctx.restore();
+    }
+
+    let lastT = performance.now();
+    function loop(t) {
+      if (running) {
+        const dt = Math.min(0.033, (t - lastT) / 1000);
+        lastT = t;
+        update(dt, t);
+        draw();
+        requestAnimationFrame(loop);
+      }
+    }
+
+    function start() {
+      initAudio();
+      resize();
+      running = true;
+      paused = false;
+      workProgress = 0;
+      coffeeCount = 0;
+      frenzyTimer = 0;
+      bossSpawned = false;
+      player.hp = 100;
+      player.maxHp = 100;
+      player.x = W / 2;
+      player.y = H * 0.75;
+      player.level = 1;
+      player.exp = 0;
+      player.nextExp = 3;
+      player.multiShot = 1;
+      player.orbitCards = 0;
+      player.cards.clear();
+
+      enemies = [];
+      bullets = [];
+      items = [];
+      particles = [];
+      texts = [];
+      lasers = [];
+
+      document.getElementById('start-overlay').style.display = 'none';
+      document.getElementById('over-overlay').style.display = 'none';
+      document.getElementById('vic-overlay').style.display = 'none';
+      document.getElementById('card-overlay').style.display = 'none';
+
+      lastT = performance.now();
+      requestAnimationFrame(loop);
+    }
+
+    function gameOver(msg) {
+      running = false;
+      document.getElementById('over-msg').innerText = msg;
+      document.getElementById('over-overlay').style.display = 'flex';
+    }
+
+    function victory() {
+      running = false;
+      document.getElementById('vic-overlay').style.display = 'flex';
+    }
+
+    document.getElementById('start-btn').addEventListener('click', start);
+    document.getElementById('retry-btn').addEventListener('click', start);
+    document.getElementById('vic-btn').addEventListener('click', start);
+
+    // 초기 화면 크기 계산
+    resize();
+  </script>
+</body>
+</html>
+

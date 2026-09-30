@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>김 과장의 AI 탈출기 : 둠스데이 무결점 에디션</title>
+  <title>김 과장의 AI 탈출기</title>
   <style>
     * {
       box-sizing: border-box;
@@ -273,19 +273,12 @@
     }
     window.addEventListener('resize', resize);
 
-    // 사운드 시스템
+    // 사운드 최적화 (Web Audio 노드 재사용으로 모바일 누수 차단)
     let audioCtx = null;
-    function initAudio() {
-      if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      }
-      if (audioCtx.state === 'suspended') {
-        audioCtx.resume();
-      }
-    }
     function playBeep(freq, type, duration, vol=0.08) {
-      if (!audioCtx) return;
       try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
         osc.type = type;
@@ -345,7 +338,7 @@
       shakeTimer = dur;
     }
 
-    // 터치 조이스틱 핸들러
+    // 터치 조이스틱
     const joyBase = document.getElementById('joy-base');
     const joyKnob = document.getElementById('joy-knob');
     let joyVec = { x: 0, y: 0 };
@@ -354,7 +347,6 @@
 
     wrap.addEventListener('touchstart', e => {
       if (!running || paused) return;
-      initAudio();
       for (let i = 0; i < e.changedTouches.length; i++) {
         const t = e.changedTouches[i];
         const r = wrap.getBoundingClientRect();
@@ -419,7 +411,6 @@
     const stampBtn = document.getElementById('stamp-btn');
     function executeStamp(e) {
       if (e) e.stopPropagation();
-      initAudio();
       if (!running || paused || stampCooldown > 0) return;
       stampCooldown = 4.5;
       workProgress = Math.min(100, workProgress + 10);
@@ -438,6 +429,7 @@
 
       for (let i = enemies.length - 1; i >= 0; i--) {
         const en = enemies[i];
+        if (!en) continue;
         const dist = Math.hypot(en.x - player.x, en.y - player.y);
         if (dist < 150) {
           const a = Math.atan2(en.y - player.y, en.x - player.x);
@@ -459,6 +451,7 @@
       let target = null;
       let minD = Infinity;
       for (const en of enemies) {
+        if (!en) continue;
         const d = Math.hypot(en.x - player.x, en.y - player.y);
         if (d < minD) { minD = d; target = en; }
       }
@@ -552,6 +545,7 @@
       items.push({ x: en.x, y: en.y, type: 'exp' });
 
       if (en.isBoss) {
+        enemies.splice(idx, 1);
         victory();
         return;
       }
@@ -559,13 +553,13 @@
       enemies.splice(idx, 1);
     }
 
-    // 선분 거리 계산기 (NaN 및 0나누기 안전 방어)
+    // 선분 거리 안전 연산
     function safeDistToSegment(px, py, vx, vy, wx, wy) {
       const l2 = (vx - wx)**2 + (vy - wy)**2;
-      if (l2 < 0.0001) return Math.hypot(px - vx, py - vy);
-      let t = ((px - vx) * (wx - vx) + (py - vy) * (wy - vy)) / l2;
+      if (l2 < 0.001) return Math.hypot(px - vx, py - vy);
+      let t = ((px - vx) * (wx - vx) + (py - vy) * (wy - wy)) / l2;
       t = Math.max(0, Math.min(1, t));
-      return Math.hypot(px - (vx + t * (wx - vx)), py - (vy + t * (wy - vy)));
+      return Math.hypot(px - (vx + t * (wx - vx)), py - (vy + t * (wy - wy)));
     }
 
     function spawnBoss() {
@@ -618,7 +612,7 @@
       player.x = Math.max(player.radius, Math.min(W - player.radius, player.x));
       player.y = Math.max(player.radius, Math.min(H - player.radius, player.y));
 
-      // 결재 데스크 점유 로직
+      // 결재 데스크 점유
       const distToDesk = Math.hypot(player.x - desk.x, player.y - desk.y);
       if (distToDesk < desk.radius + 20) {
         workProgress = Math.min(100, workProgress + 6.0 * dt);
@@ -630,7 +624,7 @@
 
       autoShoot(now);
 
-      // 법인카드 회전 가속
+      // 법인카드 회전 실드
       if (player.orbitCards > 0) {
         player.orbitAngle += 5.0 * dt;
         for (let i = 0; i < player.orbitCards; i++) {
@@ -639,6 +633,7 @@
           const cy = player.y + Math.sin(a) * 60;
           for (let eIdx = enemies.length - 1; eIdx >= 0; eIdx--) {
             const en = enemies[eIdx];
+            if (!en) continue;
             if (Math.hypot(en.x - cx, en.y - cy) < en.radius + 12) {
               en.hp -= 2.5;
               texts.push({ x: en.x, y: en.y, text: '법카!', color: '#fbbf24', life: 0.25 });
@@ -659,6 +654,7 @@
         }
         for (let eIdx = enemies.length - 1; eIdx >= 0; eIdx--) {
           const en = enemies[eIdx];
+          if (!en) continue;
           if (Math.hypot(b.x - en.x, b.y - en.y) < en.radius + 10) {
             en.hp -= b.damage;
             texts.push({
@@ -685,7 +681,7 @@
         coffeeSpawnTimer = 0;
       }
 
-      // 아이템 흡수
+      // 아이템 습득
       for (let i = items.length - 1; i >= 0; i--) {
         const it = items[i];
         const dist = Math.hypot(player.x - it.x, player.y - it.y);
@@ -732,9 +728,10 @@
         spawnTimer = 0;
       }
 
-      // 적 업데이트
+      // 적 업데이트 & 충돌 판정
       for (let i = enemies.length - 1; i >= 0; i--) {
         const en = enemies[i];
+        if (!en) continue;
 
         if (en.isBoss) {
           en.x += Math.sin(now * 0.003) * 80 * dt;
@@ -748,7 +745,7 @@
             });
             applyScreenShake(10, 0.4);
             playBeep(90, 'sawtooth', 0.35, 0.2);
-            texts.push({ x: en.x, y: en.y + 20, text: '🚨 결재 반려 레이저!', color: '#ef4444', life: 0.8 });
+            texts.push({ x: en.x, y: en.y + 20, text: '🚨 반려 레이저!', color: '#ef4444', life: 0.8 });
           }
         } else if (en.isHallu) {
           en.halluTimer += dt * 8;
@@ -772,7 +769,7 @@
         }
       }
 
-      // 레이저 피격 안전 처리
+      // 레이저 안전 판정
       for (let i = lasers.length - 1; i >= 0; i--) {
         const l = lasers[i];
         l.life -= dt;
@@ -788,7 +785,7 @@
         }
       }
 
-      // 메모리 누수 방지용 삭제 로직
+      // 파티클 & 텍스트 정리
       for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
         p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
@@ -843,7 +840,7 @@
         ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
       }
 
-      // 데스크 렌더링
+      // 데스크
       ctx.save();
       ctx.translate(desk.x, desk.y);
       ctx.fillStyle = '#334155';
@@ -868,13 +865,13 @@
         }
       }
 
-      // 서류 탄환
+      // 탄환
       for (const b of bullets) {
         ctx.fillStyle = b.isCrit ? '#ef4444' : '#ffffff';
         ctx.fillRect(b.x - 4, b.y - 7, 8, 14);
       }
 
-      // 법인카드 방어막
+      // 법카 회전체
       if (player.orbitCards > 0) {
         for (let i = 0; i < player.orbitCards; i++) {
           const a = player.orbitAngle + (i * Math.PI * 2 / player.orbitCards);
@@ -901,6 +898,7 @@
 
       // 적 렌더링
       for (const en of enemies) {
+        if (!en) continue;
         ctx.save();
         ctx.translate(en.x, en.y);
         if (en.isBoss) {
@@ -943,7 +941,7 @@
       ctx.beginPath(); ctx.arc(0, 0, 3.5, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
 
-      // 파티클
+      // 파티클 & 텍스트
       for (const p of particles) {
         ctx.fillStyle = p.color;
         ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
@@ -961,8 +959,11 @@
     let lastT = performance.now();
     function loop(t) {
       if (running) {
-        const dt = Math.min(0.033, (t - lastT) / 1000);
+        // 프레임 폭주 방지: 0.05초(20fps) 이상으로 튀면 0.016초(60fps)로 보정
+        let dt = (t - lastT) / 1000;
+        if (dt > 0.05 || isNaN(dt)) dt = 0.016;
         lastT = t;
+
         update(dt, t);
         draw();
         requestAnimationFrame(loop);
@@ -970,7 +971,6 @@
     }
 
     function start() {
-      initAudio();
       resize();
       running = true;
       paused = false;

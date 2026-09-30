@@ -1,12 +1,3 @@
-전체 코드를 한 줄씩 정밀 디버깅하여 찾아낸 게임 멈춤(크래시)의 치명적 결함 2가지입니다.
-치명적 원인 분석
- * 변수 선언 전 참조로 인한 스크립트 즉각 크래시 (TDZ Error)
-   * 스크립트 상단 resize() 함수 내부에서 desk.x = W / 2;를 실행하지만, desk 변수는 그 아래쪽에서 const desk = ...로 선언되어 있습니다.
-   * window.addEventListener('resize', resize); resize();가 실행되는 순간 ReferenceError: Cannot access 'desk' before initialization 예외가 터지면서 스크립트 전체가 사망하여 버튼을 눌러도 반응이 없던 것입니다.
- * Web Audio Context 모바일 정책 차단
-   * 사용자 인터랙션(터치/클릭) 전에 최상단에서 즉시 new AudioContext()를 생성하면서 모바일 브라우저의 오디오 자동 재생 제한 정책에 걸려 브라우저에 따라 경고 및 지연 프리징이 발생했습니다.
-버그가 완전히 수정된 실행 코드
-아래 코드는 에러를 유발하는 선언 순서를 바로잡고, 모바일 터치 및 오디오 핸들러를 안전하게 래핑한 버전입니다. 메모장에 저장하거나 복사해서 실행하시면 즉시 부드럽게 돌아갑니다.
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -270,7 +261,6 @@
     const ctx = canvas.getContext('2d');
     const wrap = document.getElementById('canvas-wrap');
 
-    // 1. 객체 변수 우선 정의 (TDZ 에러 차단)
     const desk = { x: 180, y: 110, radius: 40 };
 
     let W = 360, H = 540;
@@ -283,7 +273,6 @@
     }
     window.addEventListener('resize', resize);
 
-    // 2. 오디오 컨텍스트 지연 로딩
     let audioCtx = null;
     function initAudio() {
       if (!audioCtx) {
@@ -355,7 +344,6 @@
       shakeTimer = dur;
     }
 
-    // 모바일 조이스틱
     const joyBase = document.getElementById('joy-base');
     const joyKnob = document.getElementById('joy-knob');
     let joyVec = { x: 0, y: 0 };
@@ -420,12 +408,10 @@
     wrap.addEventListener('touchend', joyEnd);
     wrap.addEventListener('touchcancel', joyEnd);
 
-    // PC 키보드 WASD 대응
     const keys = {};
     window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; });
     window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 
-    // 도장 쾅
     const stampBtn = document.getElementById('stamp-btn');
     function executeStamp(e) {
       if (e) e.stopPropagation();
@@ -585,7 +571,6 @@
         }
       }
 
-      // 키보드 벡터 결합
       let kx = 0, ky = 0;
       if (keys['w'] || keys['arrowup']) ky -= 1;
       if (keys['s'] || keys['arrowdown']) ky += 1;
@@ -840,7 +825,6 @@
         ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
       }
 
-      // 데스크
       ctx.save();
       ctx.translate(desk.x, desk.y);
       ctx.fillStyle = '#334155';
@@ -854,7 +838,6 @@
       ctx.fillText(`💻 결재 데스크 (${Math.floor(workProgress)}%)`, 0, 38);
       ctx.restore();
 
-      // 아이템
       for (const it of items) {
         if (it.type === 'coffee') {
           ctx.font = '18px sans-serif';
@@ -865,13 +848,11 @@
         }
       }
 
-      // 발사체
       for (const b of bullets) {
         ctx.fillStyle = b.isCrit ? '#ef4444' : '#ffffff';
         ctx.fillRect(b.x - 4, b.y - 7, 8, 14);
       }
 
-      // 카드 회전체
       if (player.orbitCards > 0) {
         for (let i = 0; i < player.orbitCards; i++) {
           const a = player.orbitAngle + (i * Math.PI * 2 / player.orbitCards);
@@ -882,7 +863,6 @@
         }
       }
 
-      // 레이저 광선
       for (const l of lasers) {
         ctx.strokeStyle = '#ef4444';
         ctx.lineWidth = 14 * (l.life / 0.6);
@@ -896,7 +876,6 @@
         ctx.stroke();
       }
 
-      // 적들
       for (const en of enemies) {
         ctx.save();
         ctx.translate(en.x, en.y);
@@ -925,7 +904,6 @@
         ctx.restore();
       }
 
-      // 플레이어
       ctx.save();
       ctx.translate(player.x, player.y);
       if (frenzyTimer > 0) {
@@ -940,7 +918,6 @@
       ctx.beginPath(); ctx.arc(0, 0, 3.5, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
 
-      // 파티클 & 텍스트
       for (const p of particles) {
         ctx.fillStyle = p.color;
         ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
@@ -1017,9 +994,7 @@
     document.getElementById('retry-btn').addEventListener('click', start);
     document.getElementById('vic-btn').addEventListener('click', start);
 
-    // 초기 화면 크기 계산
     resize();
   </script>
 </body>
 </html>
-

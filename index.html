@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>김 과장의 AI 탈출기 : 하이퍼 오피스 둠스데이</title>
+  <title>김 과장의 AI 탈출기 : 둠스데이 무결점 에디션</title>
   <style>
     * {
       box-sizing: border-box;
@@ -211,26 +211,26 @@
         <span id="stamp-sub" style="font-size: 10px;">쾅!</span>
       </div>
 
-      <!-- 인트로 -->
+      <!-- 시작 화면 -->
       <div id="start-overlay" class="screen-overlay">
         <div class="modal-box">
           <div style="font-size: 40px; margin-bottom: 6px;">☕📑⚡</div>
-          <h2 style="font-size: 20px; color: #38bdf8; font-weight: 900; margin-bottom: 8px;">김 과장의 탈출기: 둠스데이</h2>
+          <h2 style="font-size: 20px; color: #38bdf8; font-weight: 900; margin-bottom: 8px;">김 과장의 탈출기</h2>
           <p style="color: #94a3b8; font-size: 12px; line-height: 1.6; text-align: left; margin-bottom: 12px;">
-            🕹️ <b>화면 왼쪽</b> 터치 드래그로 이동 (PC: WASD)<br>
-            ☕ <b>커피 3잔</b> 획득 시 5초간 <b>카페인 폭주 모드</b> (공속 3배)!<br>
-            👔 50% 결재 시 등장하는 <b>반려 머신 부장(보스)</b> 처치!<br>
-            💻 상단 결재 데스크에서 100% 채우고 칼퇴하세요.
+            🕹️ <b>화면 왼쪽</b> 터치 드래그로 자유 이동<br>
+            ☕ <b>커피 3잔</b>을 모으면 5초간 <b>광폭화</b> (공속 폭증)!<br>
+            👔 50% 결재 시 등장하는 <b>반려 머신 부장</b>을 격파하세요!<br>
+            💻 상단 데스크를 점유해 <b>결재 100%</b>를 채우면 승리!
           </p>
           <button class="btn-main" id="start-btn">출근 도장 찍고 시작</button>
         </div>
       </div>
 
-      <!-- 덱빌딩 -->
+      <!-- 레벨업 선택 -->
       <div id="card-overlay" class="screen-overlay" style="display: none;">
         <div class="modal-box">
           <h2 style="font-size: 18px; color: #fde047; font-weight: 900;">🃏 아키텍처 덱 선택</h2>
-          <p style="color: #94a3b8; font-size: 11px; margin-top: 2px;">카드를 골라 전투력을 강화하세요!</p>
+          <p style="color: #94a3b8; font-size: 11px; margin-top: 2px;">카드를 골라 김 과장을 강화하세요!</p>
           <div class="card-list" id="card-list"></div>
         </div>
       </div>
@@ -238,7 +238,7 @@
       <!-- 게임오버 -->
       <div id="over-overlay" class="screen-overlay" style="display: none;">
         <div class="modal-box">
-          <h2 style="font-size: 22px; color: #ef4444; font-weight: 900;">번아웃 사직서 제출</h2>
+          <h2 style="font-size: 22px; color: #ef4444; font-weight: 900;">번아웃 (사직서 제출)</h2>
           <p id="over-msg" style="color: #cbd5e1; font-size: 13px; margin: 12px 0;"></p>
           <button class="btn-main" id="retry-btn">다시 출근하기</button>
         </div>
@@ -273,6 +273,7 @@
     }
     window.addEventListener('resize', resize);
 
+    // 사운드 시스템
     let audioCtx = null;
     function initAudio() {
       if (!audioCtx) {
@@ -282,7 +283,7 @@
         audioCtx.resume();
       }
     }
-    function playBeep(freq, type, duration, vol=0.1) {
+    function playBeep(freq, type, duration, vol=0.08) {
       if (!audioCtx) return;
       try {
         const osc = audioCtx.createOscillator();
@@ -290,7 +291,7 @@
         osc.type = type;
         osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
         gain.gain.setValueAtTime(vol, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+        gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
         osc.connect(gain);
         gain.connect(audioCtx.destination);
         osc.start();
@@ -344,6 +345,7 @@
       shakeTimer = dur;
     }
 
+    // 터치 조이스틱 핸들러
     const joyBase = document.getElementById('joy-base');
     const joyKnob = document.getElementById('joy-knob');
     let joyVec = { x: 0, y: 0 };
@@ -408,10 +410,12 @@
     wrap.addEventListener('touchend', joyEnd);
     wrap.addEventListener('touchcancel', joyEnd);
 
+    // PC 키보드
     const keys = {};
     window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; });
     window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 
+    // 도장 스킬
     const stampBtn = document.getElementById('stamp-btn');
     function executeStamp(e) {
       if (e) e.stopPropagation();
@@ -420,15 +424,15 @@
       stampCooldown = 4.5;
       workProgress = Math.min(100, workProgress + 10);
       applyScreenShake(12, 0.35);
-      playBeep(120, 'square', 0.25, 0.25);
+      playBeep(120, 'square', 0.25, 0.2);
 
-      for (let i = 0; i < 20; i++) {
+      for (let i = 0; i < 15; i++) {
         const a = Math.random() * Math.PI * 2;
         particles.push({
           x: player.x, y: player.y,
-          vx: Math.cos(a) * (150 + Math.random() * 250),
-          vy: Math.sin(a) * (150 + Math.random() * 250),
-          color: '#ef4444', life: 0.45
+          vx: Math.cos(a) * (140 + Math.random() * 200),
+          vy: Math.sin(a) * (140 + Math.random() * 200),
+          color: '#ef4444', life: 0.4
         });
       }
 
@@ -440,7 +444,7 @@
           en.x += Math.cos(a) * 110;
           en.y += Math.sin(a) * 110;
           en.hp -= 5;
-          texts.push({ x: en.x, y: en.y, text: '결재승인 -5', color: '#f87171', life: 0.6 });
+          texts.push({ x: en.x, y: en.y, text: '결재승인 -5', color: '#f87171', life: 0.5 });
           if (en.hp <= 0) killEnemy(i);
         }
       }
@@ -473,7 +477,7 @@
             damage: dmg, isCrit: isCrit, life: 0.65
           });
         }
-        playBeep(isCrit ? 600 : 420, 'sine', 0.04, 0.05);
+        playBeep(isCrit ? 580 : 420, 'sine', 0.04, 0.04);
         lastShoot = now;
       }
     }
@@ -519,17 +523,18 @@
 
     function killEnemy(idx) {
       const en = enemies[idx];
-      playBeep(240, 'triangle', 0.1, 0.12);
+      if (!en) return;
+      playBeep(240, 'triangle', 0.1, 0.08);
       applyScreenShake(4, 0.15);
 
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < 8; i++) {
         const a = Math.random() * Math.PI * 2;
         particles.push({
           x: en.x, y: en.y,
-          vx: Math.cos(a) * (80 + Math.random() * 120),
-          vy: Math.sin(a) * (80 + Math.random() * 120),
+          vx: Math.cos(a) * (70 + Math.random() * 100),
+          vy: Math.sin(a) * (70 + Math.random() * 100),
           color: en.isBoss ? '#facc15' : '#818cf8',
-          life: 0.35
+          life: 0.3
         });
       }
 
@@ -552,6 +557,28 @@
       }
 
       enemies.splice(idx, 1);
+    }
+
+    // 선분 거리 계산기 (NaN 및 0나누기 안전 방어)
+    function safeDistToSegment(px, py, vx, vy, wx, wy) {
+      const l2 = (vx - wx)**2 + (vy - wy)**2;
+      if (l2 < 0.0001) return Math.hypot(px - vx, py - vy);
+      let t = ((px - vx) * (wx - vx) + (py - vy) * (wy - vy)) / l2;
+      t = Math.max(0, Math.min(1, t));
+      return Math.hypot(px - (vx + t * (wx - vx)), py - (vy + t * (wy - vy)));
+    }
+
+    function spawnBoss() {
+      bossSpawned = true;
+      enemies.push({
+        x: W / 2, y: 80,
+        radius: 32, hp: 80, speed: 0,
+        isBoss: true, isHallu: false,
+        laserTimer: 0
+      });
+      applyScreenShake(14, 0.6);
+      playBeep(80, 'square', 0.5, 0.25);
+      texts.push({ x: W / 2, y: 140, text: '⚠️ [보스 등장] 반려 머신 부장', color: '#facc15', life: 1.8 });
     }
 
     function update(dt, now) {
@@ -591,15 +618,19 @@
       player.x = Math.max(player.radius, Math.min(W - player.radius, player.x));
       player.y = Math.max(player.radius, Math.min(H - player.radius, player.y));
 
+      // 결재 데스크 점유 로직
       const distToDesk = Math.hypot(player.x - desk.x, player.y - desk.y);
       if (distToDesk < desk.radius + 20) {
         workProgress = Math.min(100, workProgress + 6.0 * dt);
-        if (workProgress >= 50 && !bossSpawned) spawnBoss();
+        if (workProgress >= 50 && !bossSpawned) {
+          spawnBoss();
+        }
         if (workProgress >= 100) { victory(); return; }
       }
 
       autoShoot(now);
 
+      // 법인카드 회전 가속
       if (player.orbitCards > 0) {
         player.orbitAngle += 5.0 * dt;
         for (let i = 0; i < player.orbitCards; i++) {
@@ -610,7 +641,7 @@
             const en = enemies[eIdx];
             if (Math.hypot(en.x - cx, en.y - cy) < en.radius + 12) {
               en.hp -= 2.5;
-              texts.push({ x: en.x, y: en.y, text: '법카 슬래시', color: '#fbbf24', life: 0.3 });
+              texts.push({ x: en.x, y: en.y, text: '법카!', color: '#fbbf24', life: 0.25 });
               if (en.hp <= 0) killEnemy(eIdx);
               break;
             }
@@ -618,6 +649,7 @@
         }
       }
 
+      // 발사체 처리
       for (let i = bullets.length - 1; i >= 0; i--) {
         const b = bullets[i];
         b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
@@ -633,7 +665,7 @@
               x: en.x, y: en.y - 10,
               text: b.isCrit ? `💥${b.damage}` : `${b.damage}`,
               color: b.isCrit ? '#ef4444' : '#ffffff',
-              life: 0.4
+              life: 0.35
             });
             bullets.splice(i, 1);
             if (en.hp <= 0) killEnemy(eIdx);
@@ -642,6 +674,7 @@
         }
       }
 
+      // 커피 스폰
       coffeeSpawnTimer += dt;
       if (coffeeSpawnTimer >= 5.0) {
         items.push({
@@ -652,6 +685,7 @@
         coffeeSpawnTimer = 0;
       }
 
+      // 아이템 흡수
       for (let i = items.length - 1; i >= 0; i--) {
         const it = items[i];
         const dist = Math.hypot(player.x - it.x, player.y - it.y);
@@ -670,18 +704,19 @@
             }
           } else if (it.type === 'coffee') {
             coffeeCount++;
-            playBeep(700, 'square', 0.15, 0.15);
+            playBeep(700, 'square', 0.15, 0.12);
             if (coffeeCount >= 3) {
               coffeeCount = 0;
               frenzyTimer = 5.0 + (player.cards.has('coffee_drip') ? 2.5 : 0);
               applyScreenShake(8, 0.3);
-              texts.push({ x: player.x, y: player.y - 25, text: '🔥 카페인 과다 광폭화!', color: '#f59e0b', life: 1.0 });
+              texts.push({ x: player.x, y: player.y - 25, text: '🔥 카페인 광폭화!', color: '#f59e0b', life: 1.0 });
             }
           }
           items.splice(i, 1);
         }
       }
 
+      // 적 스폰
       spawnTimer += dt;
       if (spawnTimer >= (bossSpawned ? 1.4 : 0.75)) {
         const isHallu = Math.random() < 0.25;
@@ -697,6 +732,7 @@
         spawnTimer = 0;
       }
 
+      // 적 업데이트
       for (let i = enemies.length - 1; i >= 0; i--) {
         const en = enemies[i];
 
@@ -708,10 +744,10 @@
             lasers.push({
               x: en.x, y: en.y,
               targetX: player.x, targetY: player.y,
-              life: 0.6
+              life: 0.55
             });
             applyScreenShake(10, 0.4);
-            playBeep(90, 'sawtooth', 0.35, 0.25);
+            playBeep(90, 'sawtooth', 0.35, 0.2);
             texts.push({ x: en.x, y: en.y + 20, text: '🚨 결재 반려 레이저!', color: '#ef4444', life: 0.8 });
           }
         } else if (en.isHallu) {
@@ -727,7 +763,7 @@
         if (Math.hypot(player.x - en.x, player.y - en.y) < player.radius + en.radius) {
           player.hp -= 15;
           applyScreenShake(8, 0.25);
-          playBeep(100, 'sawtooth', 0.15, 0.2);
+          playBeep(100, 'sawtooth', 0.15, 0.18);
           enemies.splice(i, 1);
           if (player.hp <= 0) {
             gameOver("부하를 견디지 못하고 쓰러졌습니다...");
@@ -736,14 +772,15 @@
         }
       }
 
+      // 레이저 피격 안전 처리
       for (let i = lasers.length - 1; i >= 0; i--) {
         const l = lasers[i];
         l.life -= dt;
         if (l.life <= 0) { lasers.splice(i, 1); continue; }
-        const d = distToSegment({ x: player.x, y: player.y }, { x: l.x, y: l.y }, { x: l.targetX, y: l.targetY });
+        const d = safeDistToSegment(player.x, player.y, l.x, l.y, l.targetX, l.targetY);
         if (d < 18) {
-          player.hp -= 40 * dt;
-          applyScreenShake(6, 0.1);
+          player.hp -= 35 * dt;
+          applyScreenShake(5, 0.08);
           if (player.hp <= 0) {
             gameOver("부장님의 반려 레이저에 통째로 증발했습니다...");
             return;
@@ -751,6 +788,7 @@
         }
       }
 
+      // 메모리 누수 방지용 삭제 로직
       for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
         p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
@@ -763,26 +801,6 @@
       }
 
       updateUI();
-    }
-
-    function distToSegment(p, v, w) {
-      const l2 = (v.x - w.x)**2 + (v.y - w.y)**2;
-      if (l2 === 0) return Math.hypot(p.x - v.x, p.y - v.y);
-      let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
-      t = Math.max(0, Math.min(1, t));
-      return Math.hypot(p.x - (v.x + t * (w.x - v.x)), p.y - (v.y + t * (w.y - v.y)));
-    }
-
-    function spawnBoss() {
-      bossSpawned = true;
-      enemies.push({
-        x: W / 2, y: 80,
-        radius: 32, hp: 80, speed: 0,
-        isBoss: true, isHallu: false
-      });
-      applyScreenShake(14, 0.6);
-      playBeep(80, 'square', 0.5, 0.3);
-      texts.push({ x: W / 2, y: 140, text: '⚠️ [보스] 반려 머신 부장', color: '#facc15', life: 2.0 });
     }
 
     function updateUI() {
@@ -825,6 +843,7 @@
         ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
       }
 
+      // 데스크 렌더링
       ctx.save();
       ctx.translate(desk.x, desk.y);
       ctx.fillStyle = '#334155';
@@ -838,6 +857,7 @@
       ctx.fillText(`💻 결재 데스크 (${Math.floor(workProgress)}%)`, 0, 38);
       ctx.restore();
 
+      // 아이템
       for (const it of items) {
         if (it.type === 'coffee') {
           ctx.font = '18px sans-serif';
@@ -848,11 +868,13 @@
         }
       }
 
+      // 서류 탄환
       for (const b of bullets) {
         ctx.fillStyle = b.isCrit ? '#ef4444' : '#ffffff';
         ctx.fillRect(b.x - 4, b.y - 7, 8, 14);
       }
 
+      // 법인카드 방어막
       if (player.orbitCards > 0) {
         for (let i = 0; i < player.orbitCards; i++) {
           const a = player.orbitAngle + (i * Math.PI * 2 / player.orbitCards);
@@ -863,19 +885,21 @@
         }
       }
 
+      // 레이저
       for (const l of lasers) {
         ctx.strokeStyle = '#ef4444';
-        ctx.lineWidth = 14 * (l.life / 0.6);
+        ctx.lineWidth = 14 * (l.life / 0.55);
         ctx.beginPath();
         ctx.moveTo(l.x, l.y);
         ctx.lineTo(l.targetX, l.targetY);
         ctx.stroke();
 
         ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 4 * (l.life / 0.6);
+        ctx.lineWidth = 4 * (l.life / 0.55);
         ctx.stroke();
       }
 
+      // 적 렌더링
       for (const en of enemies) {
         ctx.save();
         ctx.translate(en.x, en.y);
@@ -904,6 +928,7 @@
         ctx.restore();
       }
 
+      // 플레이어
       ctx.save();
       ctx.translate(player.x, player.y);
       if (frenzyTimer > 0) {
@@ -918,6 +943,7 @@
       ctx.beginPath(); ctx.arc(0, 0, 3.5, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
 
+      // 파티클
       for (const p of particles) {
         ctx.fillStyle = p.color;
         ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
